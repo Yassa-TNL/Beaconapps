@@ -21,6 +21,7 @@ In progress                     1. Add parse parameters for -s equals top folder
                                 5. d' for lures value d' equation
                                 {Target-%Cor ,LureH-%Inc, LureL-%inc} see clack
                                 see normsinv function equation
+                                d'LureH = Z(HR of Target) -z(FA of LuresHigh)
                                 6. Run script on cron job on server
 
 '''
