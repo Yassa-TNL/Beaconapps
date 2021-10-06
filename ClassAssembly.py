@@ -48,12 +48,59 @@ def main():
                           'precision,precision_sd,precision_lb,precision_ub,' \
                           'recall,recall_sd,recall_lb,recall_ub,' \
                           'fbeta,fbeta_sd,fbeta_lb,fbeta_ub,' \
-                          'auc,auc_sd,auc_lb,auc_ub'
+                          'auc,auc_sd,auc_lb,auc_ub,wilcox_rank,wilcox_p,t_4,T_test_p,mean_var,mean_var_sd'
             for x in os.walk(source):
                 try:
                     spath= join(x[0],"*ClassifierResults*")
                     for F in glob.glob(spath):
                         if not "@eaDir" in F:
+                            if rfound > 1:
+                                error_level = "Parsing header, read line,"
+                                conf_inc = get_conf_inc( std_chance_prob,cross_v_numb)
+                                ci_lb = mean_chance_prob - conf_inc
+                                ci_ub = mean_chance_prob + conf_inc
+                                rpt_dict = get_rpt_dictionary(rpt_headers)
+                                rpt_dict['Folder'] = folder
+                                rpt_dict['Model'] = Model
+                                rpt_dict['cross_v_numb'] = cross_v_numb
+                                rpt_dict['predict_var_used'] = predict_var_used
+                                rpt_dict['ci_lb'] = ci_lb
+                                rpt_dict['ci_ub'] = ci_ub
+                                rpt_dict['out_var_used'] = out_var_used
+                                rpt_dict['classes_in_outcome'] = classes_in_outcome
+                                rpt_dict['mean_chance_prob'] = mean_chance_prob
+                                rpt_dict['std_chance_prob'] = std_chance_prob
+                                rpt_dict['accuracy'] = accuracy
+                                rpt_dict['accuracy_sd'] = accuracy_sd
+                                rpt_dict['precision'] = precision
+                                rpt_dict['precision_sd'] = precision_sd
+                                rpt_dict['recall'] = recall
+                                rpt_dict['recall_sd'] = recall_sd
+                                rpt_dict['fbeta'] = fbeta
+                                rpt_dict['fbeta_sd'] = fbeta_sd
+                                rpt_dict['auc'] = auc
+                                rpt_dict['auc_sd'] = auc_sd
+                                rpt_dict['accuracy_lb'] = accuracy_lb
+                                rpt_dict['accuracy_ub'] = accuracy
+                                rpt_dict['auc_lb'] = auc_lb
+                                rpt_dict['auc_ub'] = auc_ub
+                                rpt_dict['precision_lb'] = precision_lb
+                                rpt_dict['precision_ub'] = precision_ub
+                                rpt_dict['fbeta_lb'] = fbeta_lb
+                                rpt_dict['fbeta_ub'] = fbeta_ub
+                                rpt_dict['recall_lb'] = recall_lb
+                                rpt_dict['recall_ub'] = recall_ub
+                                rpt_dict['wilcox_rank'] = wilcox_rank
+                                rpt_dict['wilcox_p'] = wilcox_p
+                                rpt_dict['t_4'] = t_4
+                                rpt_dict['T_test_p'] = T_test_p
+                                rpt_dict['mean_var'] = mean_var
+                                rpt_dict['mean_var_sd'] = mean_var_sd
+                                df_rpt_row = pd.DataFrame(rpt_dict, index=[0])
+                                if rfound > 2:
+                                    df_rpt = df_rpt.append(df_rpt_row)
+                                else:
+                                    df_rpt = df_rpt_row
                             print("Parsing",F)
                             folder = get_folder_name(F)
                             with open(F,'r') as rfile:
@@ -123,13 +170,19 @@ def main():
                                             rpt_dict['fbeta_ub'] = fbeta_ub
                                             rpt_dict['recall_lb'] = recall_lb
                                             rpt_dict['recall_ub'] = recall_ub
+                                            rpt_dict['wilcox_rank'] = wilcox_rank
+                                            rpt_dict['wilcox_p'] = wilcox_p
+                                            rpt_dict['t_4'] = t_4
+                                            rpt_dict['T_test_p'] = T_test_p
+                                            rpt_dict['mean_var'] = mean_var
+                                            rpt_dict['mean_var_sd'] = mean_var_sd
                                             df_rpt_row = pd.DataFrame(rpt_dict, index=[0])
                                             if rfound > 2:
                                                 df_rpt = df_rpt.append(df_rpt_row)
                                             else:
                                                 df_rpt = df_rpt_row
                                         error_level = "Parsing results, Getting result type,"
-                                        Model = results[l_numb-2].split(':')[0].replace('results','')
+                                        Model = results[l_numb-2].split(':')[0].replace('results','').strip()
                                     elif 'accuracy=' in l:
                                         error_level = "Parsing results, Getting accuracy,"
                                         ac = l.split('=')[1]
@@ -162,7 +215,7 @@ def main():
                                         recall_lb = recall - recall_ci
                                         recall_ub = recall + recall_ci
                                     elif 'fbeta=' in l:
-                                        error_level = "Parsing results, Getting fbetay,"
+                                        error_level = "Parsing results, Getting fbeta,"
                                         fb = l.split('=')[1]
                                         fbeta = (fb.split('+/-')[0]).strip()
                                         fbeta_sd = (fb.split('+/-')[1]).strip()
@@ -181,12 +234,47 @@ def main():
                                         auc_ci = get_conf_inc(auc_sd,cross_v_numb)
                                         auc_lb = auc - auc_ci
                                         auc_ub = auc + auc_ci
-
+                                    elif 'wilcoxon' in l:
+                                        error_level = "Parsing results, Making results consitent,"
+                                        l = l.replace('rank:','')
+                                        l= l.replace('p-value:','')
+                                        error_level = "Parsing results, Getting Wilcoxin,"
+                                        ac = l.split('=')[1]
+                                        error_level = "Parsing results, Getting Wilcoxin Rank,"
+                                        wilcox_rank = ac.split(',')[0].strip()
+                                        error_level = "Parsing results, Converting Wilcoxin Rank to float,"
+                                        wilcox_rank = float(wilcox_rank)
+                                        error_level = "Parsing results, Getting Wilcoxin p,"
+                                        wilcox_p = ac.split(',')[1].strip()
+                                        error_level = "Parsing results, Converting Wilcoxin p to float,"
+                                        wilcox_p = float(wilcox_p)
+                                    elif 'one-sample t-test' in l:
+                                        error_level = "Parsing results, Getting T-test,"
+                                        ac = l.split('=')[1]
+                                        error_level = "Parsing results, Getting T-test score,"
+                                        t_4 = ac.split(',')[0].split(':')[1].strip()
+                                        error_level = "Parsing results, converting T-test score to float,"
+                                        try:
+                                            t_4 = float(t_4)
+                                        except:
+                                            t_4 = t_4
+                                        error_level = "Parsing results, Getting T-test p-value,"
+                                        T_test_p = ac.split(',')[1].split(':')[1].strip()
+                                        error_level = "Parsing results, Getting T-test p-value,"
+                                    elif 'mean variable' in l:
+                                        ac = results[l_numb].split('=')[0].strip()
+                                        error_level = "Parsing results, Getting mean_var,"
+                                        mean_var = results[l_numb].split('=')[1].split('+/-')[0].strip()
+                                        error_level = "Parsing results,Converting mean_var to float,"
+                                        mean_var = float(mean_var)
+                                        error_level = "Parsing results, Getting mean variable,"
+                                        mean_var_sd = results[l_numb].split('=')[1].split('+/-')[1].strip()
+                                        mean_var_sd = float(mean_var_sd)
+                                        error_level = "Parsing results, Getting mean variable,"
                                 except:
                                     error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + '\n'
                 except:
                     error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + ": " + F + '\n'
-            error_level = "Parsing results, Initiating rpt_headers,"
             error_level = "Parsing results, Outputting Data,"
             data = df_rpt.to_csv(header=True, index=False, columns=rpt_headers.split(','))
             error_level = "Parsing results, Setting Data Stamp for file label,"

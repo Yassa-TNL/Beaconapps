@@ -28,13 +28,70 @@ In progress                     1. Add parse parameters for -s equals top folder
 
 from __future__ import division
 
+from datetime import datetime
 import argparse
-import os
-from openpyxl import Workbook
 import pandas as pd
+from pathlib import Path
+from scipy.stats import norm
 import numpy as np
 from numpy import trapz
 import sys
+
+mapping = {
+    "MDTO": {
+        "cdHard": "Target",
+        "cdHigh": "LureH",
+        "cdLow": "LureL",
+        "cdEasy": "Foil"
+    },
+    "MDTS": {
+        "cdHard": "Same",
+        "cdHigh": "Small Mv",
+        "cdLow": "Large Mv",
+        "cdEasy": "Corner Mv"
+    },
+    "MDTT": {
+        "cdHard" : "Adj",
+        "cdHigh": "Eight",
+        "cdLow": "Sixteen",
+        "cdEasy": "PR"
+    },
+}
+
+
+def create_pandas_dataframes() -> dict:
+    types = ["MDTO", "MDTS", "MDTT", "MDTO-LDI", "MDTS-LDI"]
+    dfs = []
+
+    for type in types:
+        if type in ["MDTO", "MDTS", "MDTT"]:
+            cdHard, cdHigh, cdLow, cdEasy = mapping[type].values()
+
+            column_names = (
+                "Subject", "Trials/Cond", "%s-Responses" % (cdHard), "%s-%%Cor" % (cdHard),
+                "%s-%%Inc" % (cdHard), "%s-Responses" % (cdHigh), "%s-%%Cor" % (cdHigh), "%s-%%Inc" % (cdHigh),
+                "%s-Responses" % (cdLow),
+                "%s-%%Cor" % (cdLow), "%s-%%Inc" % (cdLow), "%s-Responses" % (cdEasy), "%s-%%Cor" % (cdEasy),
+                "%s-%%Inc" % (cdEasy)
+            )
+
+            dfs.append(pd.DataFrame(columns=column_names))
+        else:
+            dfs.append(pd.DataFrame(columns=[
+                "Subject", "d'", "LDI: High", "LDI: Combined", "Target-Foil_AUC", "LDI_slope",
+                "Target-Foil_slope"
+            ]))
+
+    return dict(zip(types, dfs))
+
+
+def get_data_after_colon(line: str) -> int:
+    colon_idx = line.find(":")
+    return int(line[colon_idx+1:].strip())
+
+
+def get_proportion_data(line: str) -> float:
+    return float(line[-4:])
 
 
 def main():
@@ -42,7 +99,7 @@ def main():
     # to see what each block of code is doing examine error_level statement
     error_level = ""
     try:
-        error_level = "Get Parameters, Declare Arg Parser,"
+        error_level = 'Get Parameters, Declare Arg Parser,'
         parser = argparse.ArgumentParser()
         error_level = "Get Parameters, Add arguments to parser"
         parser.add_argument('-s', required=True, help="Top folder from which to read results")
@@ -51,214 +108,129 @@ def main():
         args = parser.parse_args()
         error_level = "Get Parameters, Declare Arg Parser,"
 
-        # Create spreadsheet, and 1 sheet for each task type
-        sheetName = "mdt_results.xlsx"
-        wb = Workbook()
-        wsObj = wb.active
-        wsObj.title = "MDTO"
-        wsSpl = wb.create_sheet(title="MDTS")
-        wsTmp = wb.create_sheet(title="MDTT")
-        print("")
+        # Create pandas dataframe for each task type
+        error_log = "Creating pandas dataframes and logging data\n"
+        error_level = "Creating pandas dataframes"
+        dataframes = create_pandas_dataframes()
 
-        # Assign the column headers for each sheet
-        error_log = "Assigning Workbooks, Formatting worksheets in Workbook" + "\n"
-        for ws in wb:
-            try:
-                if (ws.title == "MDTO"):
-                    error_level = "Assigning Workbooks, Formatting MDTO worksheet in Workbook" + "\n"
-                    cdHard = "Target"
-                    cdHigh = "LureH"
-                    cdLow = "LureL"
-                    cdEasy = "Foil"
-                elif (ws.title == "MDTS"):
-                    error_level = "Assigning Workbooks, Formatting MDTS worksheet in Workbook" + "\n"
-                    cdHard = "Same"
-                    cdHigh = "Small Mv"
-                    cdLow = "Large Mv"
-                    cdEasy = "Corner Mv"
-                elif (ws.title == "MDTT"):
-                    error_level = "Assigning Workbooks, Formatting MDTT worksheet in Workbook" + "\n"
-                    cdHard = "Adj"
-                    cdHigh = "Eight"
-                    cdLow = "Sixteen"
-                    cdEasy = "PR"
-                error_level = "Assigning Workbooks, Column Titles Workbook" + "\n"
-                ws['A1'] = "Subject"
-                ws['B1'] = "Trials/Cond"
-                ws['C1'] = "%s-Responses" % (cdHard)
-                ws['D1'] = "%s-%%Cor" % (cdHard)
-                ws['E1'] = "%s-%%Inc" % (cdHard)
-                ws['F1'] = "%s-Responses" % (cdHigh)
-                ws['G1'] = "%s-%%Cor" % (cdHigh)
-                ws['H1'] = "%s-%%Inc" % (cdHigh)
-                ws['I1'] = "%s-Responses" % (cdLow)
-                ws['J1'] = "%s-%%Cor" % (cdLow)
-                ws['K1'] = "%s-%%Inc" % (cdLow)
-                ws['L1'] = "%s-Responses" % (cdEasy)
-                ws['M1'] = "%s-%%Cor" % (cdEasy)
-                ws['N1'] = "%s-%%Inc" % (cdEasy)
-            except Exception as e:
-                error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + '\n'
-        error_level = "Create Worksheet, MOTO-LDI workseet" + "\n"
-        wsOLDI = wb.create_sheet(title="MDTO-LDI")
-        wsOLDI['A1'] = "Subject"
-        wsOLDI['B1'] = "d'"
-        wsOLDI['C1'] = "LDI: High"
-        wsOLDI['D1'] = "LDI: Low"
-        wsOLDI['E1'] = "LDI: Combined"
-        wsOLDI['F1'] = "LDI_AUC"
-        wsOLDI['G1'] = "Target-Foil_AUC"
-        wsOLDI['H1'] = "LDI_slope"
-        wsOLDI['I1'] = "Target-Foil_slope"
+        # print(dataframes["MDTO"])
 
-        error_level = "Create Worksheet, MDTS-LDI workseet" + "\n"
-        wsSLDI = wb.create_sheet(title="MDTS-LDI")
-        wsSLDI['A1'] = "Subject"
-        wsSLDI['B1'] = "d'"
-        wsSLDI['C1'] = "LDI: High"
-        wsSLDI['D1'] = "LDI: Low"
-        wsSLDI['E1'] = "LDI: Combined"
-        wsSLDI['F1'] = "LDI_AUC"
-        wsSLDI['G1'] = "Target-Foil_AUC"
-        wsSLDI['H1'] = "LDI_slope"
-        wsSLDI['I1'] = "Target-Foil_slope"
+        error_level = "Extracting data from all relevant log files"
+        input_dir = Path(args.s).iterdir()
 
-        error_level = "Create Worksheet, MDTT-LDI workseet" + "\n"
-        # Analogous to above
-        # Put all log files in directory into list
-        dataDir = os.getcwd()
-        fileList = os.listdir(dataDir)
-        logs = [f for f in fileList if f.endswith("log.txt") and "old" not in f]
+        for f in input_dir:
+            error_level = "Checking that log file is viable"
+            if not (f.name.endswith("log.txt") and "old" not in f.name):
+                continue
 
-        objIdx = 0
-        sptIdx = 0
-        tmpIdx = 0
-        error_level = "Processing Data, Iterating through logs," + "\n"
-        for i in range(0, len(logs)):
-            try:
-                print(logs[i])
-                error_level = "Processing Data, removing end of line characters," + "\n"
-                logFile = [line.rstrip('\n') for line in open(logs[i])]
-                error_level = "Processing Data, Testing precense of scores," + "\n"
-                if not any(line.startswith("Scores:") for line in logFile):
-                    print("No scores found, skipped logfile: %s" % (logs[i]))
-                    continue
-                error_level = "Processing Data, Creting Row," + "\n"
-                row = ""
-                error_level = "Processing Data, Getting Subject number," + "\n"
-                subjectNum = int(logs[i].split("_")[0])
-                error_level = "Processing Data, getting task type," + "\n"
-                taskType = logs[i].split("_")[1]
-                if taskType == "MDTO":
-                    objIdx += 1
-                    row = objIdx
-                elif taskType == "MDTS":
-                    sptIdx += 1
-                    row = sptIdx
-                elif taskType == "MDTT":
-                    tmpIdx += 1
-                    row = tmpIdx
-                ws = wb[taskType]
-                error_level = "Processing Data, set score index to zeero," + "\n"
-                scoreIdx = 0
-                error_level = "Processing Data, Iterating through length of logfile," + "\n"
-                for j in range(0, len(logFile)):
-                    try:
-                        error_level = "Processing Data,getting trials," + "\n"
-                        if logFile[j].startswith("Trials/Condition"):
-                            trials = int(logFile[j].split(":")[1].strip())
-                        error_level = "Processing Data,getting trials," + "\n"
-                        if logFile[j].startswith("Blocks ran"):
-                            trials = int(logFile[j][-3:]) * 4
-                        error_level = "Processing Data,getting scores," + "\n"
-                        if logFile[j].startswith("Scores"):
-                            ws['C%d' % (row + 1)] = int(logFile[j + 4].split(":")[1].strip())
-                            ws['F%d' % (row + 1)] = int(logFile[j + 7].split(":")[1].strip())
-                            ws['I%d' % (row + 1)] = int(logFile[j + 10].split(":")[1].strip())
-                            ws['L%d' % (row + 1)] = int(logFile[j + 13].split(":")[1].strip())
-                            ws['D%d' % (row + 1)] = float(logFile[j + 15][-5:])
-                            ws['E%d' % (row + 1)] = float(logFile[j + 16][-5:])
-                            ws['G%d' % (row + 1)] = float(logFile[j + 17][-5:])
-                            ws['H%d' % (row + 1)] = float(logFile[j + 18][-5:])
-                            ws['J%d' % (row + 1)] = float(logFile[j + 19][-5:])
-                            ws['K%d' % (row + 1)] = float(logFile[j + 20][-5:])
-                            ws['M%d' % (row + 1)] = float(logFile[j + 21][-5:])
-                            ws['N%d' % (row + 1)] = float(logFile[j + 22][-5:])
-                            ws['A%d' % (row + 1)] = subjectNum
-                            ws['B%d' % (row + 1)] = trials
-                    except Exception as e:
-                        error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + ' ' + logs[i] + '\n'
+            text = f.read_text()
+            lines = text.split("\n")
 
-                if taskType == "MDTO":
+            if not any(line.startswith("Scores:") for line in lines):
+                continue
 
-                    pTgtHit = ws['D%d' % (row + 1)].value
-                    pFoilFA = ws['N%d' % (row + 1)].value
-                    if pTgtHit == 1: pTgtHit = 0.9999999999
-                    if not pTgtHit: pTgtHit = 0.0000000001
-                    if pFoilFA == 1: pFoilFA = 0.9999999999
-                    if not pFoilFA: pFoilFA = 0.0000000001
-                    dPrime = "=NORMSINV(%.2f)-NORMSINV(%.2f)" % (pTgtHit, pFoilFA)
+            subject_num = int(f.name.split("_")[0])
+            task_type = f.name.split("_")[1]
+            trial_condition = 0
 
-                    hiLDI = ws['G%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
-                    loLDI = ws['J%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
-                    cbLDI = (hiLDI + loLDI) / 2
-                    yLDI = [loLDI, hiLDI]
-                    areaLDI = trapz(yLDI, dx=1)
-                    yTarFoil = [pTgtHit, pFoilFA]
-                    areaTarFoil = trapz(yTarFoil, dx=1)
-                    slopeLDI = loLDI - hiLDI
-                    slopeTarFoil = pTgtHit - pFoilFA
+            error_level = f"Parsing data from log file of task type {task_type}"
+            idx = 0
+            while idx < len(lines):
+                if task_type == "MDTT" and lines[idx].startswith("Blocks ran"):
+                    trial_condition = get_data_after_colon(lines[idx])
+                    break
 
-                    wsOLDI['A%d' % (row + 1)] = subjectNum
-                    wsOLDI['B%d' % (row + 1)] = dPrime
-                    wsOLDI['C%d' % (row + 1)] = hiLDI
-                    wsOLDI['D%d' % (row + 1)] = loLDI
-                    wsOLDI['E%d' % (row + 1)] = cbLDI
-                    wsOLDI['F%d' % (row + 1)] = areaLDI
-                    wsOLDI['G%d' % (row + 1)] = areaTarFoil
-                    wsOLDI['H%d' % (row + 1)] = slopeLDI
-                    wsOLDI['I%d' % (row + 1)] = slopeTarFoil
+                elif ((task_type == "MDTO" or task_type == "MDTS") and lines[idx].startswith("Trials/Condition")):
+                    trial_condition = get_data_after_colon(lines[idx])
+                    break
+                idx += 1
 
-                if taskType == "MDTS":
+            row_dict = {"Subject": subject_num, "Trials/Cond": trial_condition}
+            score_idx = lines.index("Scores:")
+            cdHard, cdHigh, cdLow, cdEasy = mapping[task_type].values()
 
-                    pTgtHit = ws['D%d' % (row + 1)].value
-                    pFoilFA = ws['N%d' % (row + 1)].value
-                    if pTgtHit == 1: pTgtHit = 0.9999999999
-                    if not pTgtHit: pTgtHit = 0.0000000001
-                    if pFoilFA == 1: pFoilFA = 0.9999999999
-                    if not pFoilFA: pFoilFA = 0.0000000001
-                    dPrime = "=NORMSINV(%.2f)-NORMSINV(%.2f)" % (pTgtHit, pFoilFA)
+            row_dict["%s-Responses" % cdHard] = get_data_after_colon(lines[score_idx+4])
+            row_dict["%s-%%Cor" % cdHard] = get_proportion_data(lines[score_idx+15])
+            row_dict["%s-%%Inc" % cdHard] = get_proportion_data(lines[score_idx + 16])
+            row_dict["%s-Responses" % cdHigh] = get_data_after_colon(lines[score_idx + 7])
+            row_dict["%s-%%Cor" % cdHigh] = get_proportion_data(lines[score_idx + 17])
+            row_dict["%s-%%Inc" % cdHigh] = get_proportion_data(lines[score_idx + 18])
+            row_dict["%s-Responses" % cdLow] = get_data_after_colon(lines[score_idx + 10])
+            row_dict["%s-%%Cor" % cdLow] = get_proportion_data(lines[score_idx + 19])
+            row_dict["%s-%%Inc" % cdLow] = get_proportion_data(lines[score_idx + 20])
+            row_dict["%s-Responses" % cdEasy] = get_data_after_colon(lines[score_idx + 13])
+            row_dict["%s-%%Cor" % cdEasy] = get_proportion_data(lines[score_idx + 21])
+            row_dict["%s-%%Inc" % cdEasy] = get_proportion_data(lines[score_idx + 22])
 
-                    hiLDI = ws['G%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
-                    loLDI = ws['J%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
-                    cbLDI = (hiLDI + loLDI) / 2
-                    yLDI = [loLDI, hiLDI]
-                    areaLDI = trapz(yLDI, dx=1)
-                    yTarFoil = [pTgtHit, pFoilFA]
-                    areaTarFoil = trapz(yTarFoil, dx=1)
-                    slopeLDI = loLDI - hiLDI
-                    slopeTarFoil = pTgtHit - pFoilFA
-                    wsSLDI['A%d' % (row + 1)] = subjectNum
-                    wsSLDI['B%d' % (row + 1)] = dPrime
-                    wsSLDI['C%d' % (row + 1)] = hiLDI
-                    wsSLDI['D%d' % (row + 1)] = loLDI
-                    wsSLDI['E%d' % (row + 1)] = cbLDI
-                    wsSLDI['F%d' % (row + 1)] = areaLDI
-                    wsSLDI['G%d' % (row + 1)] = areaTarFoil
-                    wsSLDI['H%d' % (row + 1)] = slopeLDI
-                    wsSLDI['I%d' % (row + 1)] = slopeTarFoil
-            except Exception as e:
-                error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + ' ' + logs[i] + '\n'
-        error_level = "Output file, sort each sheet by subject ID," + "\n"
-        wb.save(filename=sheetName)
+            dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
+
+            if task_type == "MDTS":
+                error_level = "Parsing data for MDTS LDI dataframe"
+                ldi_dict = {"Subject": subject_num}
+
+                pTgtHit = row_dict["Same-%Cor"]
+                pFoilFA = row_dict["Corner Mv-%Inc"]
+
+                if pTgtHit == 1: pTgtHit = 0.9999999999
+                if not pTgtHit: pTgtHit = 0.0000000001
+                if pFoilFA == 1: pFoilFA = 0.9999999999
+                if not pFoilFA: pFoilFA = 0.0000000001
+
+                dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
+                ldi_dict["d'"] = dPrime
+
+                ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
+                ldi_dict["LDI: Low"] = row_dict["Large Mv-%Cor"] - row_dict["Same-%Inc"]
+                ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
+                ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
+                yTarFoil = [pTgtHit, pFoilFA]
+                ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
+                ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
+                ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
+
+                dataframes["MDTO-LDI"] = dataframes["MDTO-LDI"].append(ldi_dict, ignore_index=True)
+
+            elif task_type == "MDTO":
+                error_level = "Parsing data for MDTO LDI dataframe"
+                ldi_dict = {"Subject": subject_num}
+
+                pTgtHit = row_dict["Target-%Cor"]
+                pFoilFA = row_dict["Foil-%Inc"]
+
+                if pTgtHit == 1: pTgtHit = 0.9999999999
+                if not pTgtHit: pTgtHit = 0.0000000001
+                if pFoilFA == 1: pFoilFA = 0.9999999999
+                if not pFoilFA: pFoilFA = 0.0000000001
+
+                dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
+                ldi_dict["d'"] = dPrime
+
+                ldi_dict["LDI: High"] = row_dict["LureH-%Cor"] - row_dict["Target-%Inc"]
+                ldi_dict["LDI: Low"] = row_dict["LureL-%Cor"] - row_dict["Target-%Inc"]
+                ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
+                ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
+                yTarFoil = [pTgtHit, pFoilFA]
+                ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
+                ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
+                ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
+
+                dataframes["MDTS-LDI"] = dataframes["MDTS-LDI"].append(ldi_dict, ignore_index=True)
+
+        output_dir = str(args.d)
+        error_level = "Writing pandas dataframes to excel sheet"
+
+        datestamp = datetime.now()
+        result_name = datestamp.strftime(f"{output_dir}BeaconAppResults_%Y_%m_%d.xlsx")
+        print(f"result_name: {result_name}")
+
+        for key, value in dataframes.items():
+            value.to_excel(result_name, sheet_name=key)
 
     except Exception as e:
-        error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + '\n'
-    print(error_log)
-
+        error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + f"\n, File name: {f.name}"
+        print(error_log)
+        raise
 
 if __name__ == '__main__': main()
-
-
-
-
