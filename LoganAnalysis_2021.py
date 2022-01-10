@@ -18,11 +18,15 @@ In progress                     1. Add parse parameters for -s equals top folder
                                 Target-%Cor - Foil-%Inc
                                 4. Calculate d' values handle 0 or 1 hit rate
                                 or false alarm
-                                5. d' for lures value d' equation
-                                {Target-%Cor ,LureH-%Inc, LureL-%inc} see clack
+                                5. d' for lures for high and low value d' equation
+                                d' lure high This applies ot the object condition
+                                {Target-%Cor ,LureH-%Inc, LureL-%inc} see slack
+                                d' lure low
+                                {Target-%Cor ,LureL-%Inc, LureL-%inc} see slack
                                 see normsinv function equation
-                                d'LureH = Z(HR of Target) -z(FA of LuresHigh)
+                                d'LureL = Z(HR of Target) -z(FA of LuresLow)
                                 6. Run script on cron job on server
+                                7. Sort subjcts by number prior to output
 
 '''
 
@@ -30,6 +34,7 @@ from __future__ import division
 
 from datetime import datetime
 import argparse
+from openpyxl import Workbook
 import pandas as pd
 from pathlib import Path
 from scipy.stats import norm
@@ -60,7 +65,7 @@ mapping = {
 
 
 def create_pandas_dataframes() -> dict:
-    types = ["MDTO", "MDTS", "MDTT", "MDTO-LDI", "MDTS-LDI"]
+    types = ["MDTO", "MDTS", "MDTT", "MDTO-LDI", "MDTS-LDI", "MDTT-LDI"]
     dfs = []
 
     for type in types:
@@ -109,17 +114,16 @@ def main():
         error_level = "Get Parameters, Declare Arg Parser,"
 
         # Create pandas dataframe for each task type
-        error_log = "Creating pandas dataframes and logging data\n"
-        error_level = "Creating pandas dataframes"
+        error_level = "Creating pandas dataframes,"
         dataframes = create_pandas_dataframes()
 
         # print(dataframes["MDTO"])
 
-        error_level = "Extracting data from all relevant log files"
+        error_level = "Extracting data from all relevant log files,"
         input_dir = Path(args.s).iterdir()
 
         for f in input_dir:
-            error_level = "Checking that log file is viable"
+            error_level = "Checking that log file is viable,"
             if not (f.name.endswith("log.txt") and "old" not in f.name):
                 continue
 
@@ -133,7 +137,7 @@ def main():
             task_type = f.name.split("_")[1]
             trial_condition = 0
 
-            error_level = f"Parsing data from log file of task type {task_type}"
+            error_level = f"Parsing data from log file of task type {task_type},"
             idx = 0
             while idx < len(lines):
                 if task_type == "MDTT" and lines[idx].startswith("Blocks ran"):
@@ -161,76 +165,144 @@ def main():
             row_dict["%s-Responses" % cdEasy] = get_data_after_colon(lines[score_idx + 13])
             row_dict["%s-%%Cor" % cdEasy] = get_proportion_data(lines[score_idx + 21])
             row_dict["%s-%%Inc" % cdEasy] = get_proportion_data(lines[score_idx + 22])
+            if row_dict["%s-Responses" % cdHard] != 0:
+                dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
+                if task_type == "MDTS":
+                    error_level = "Parsing data for MDTS LDI dataframe,"
+                    ldi_dict = {"Subject": subject_num}
 
-            dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
+                    pTgtHit = row_dict["Same-%Cor"]
+                    pFoilFA = row_dict["Corner Mv-%Inc"]
+                    pLureHFA = row_dict['Small Mv-%Inc']
+                    pLureLFA = row_dict['Large Mv-%Inc']
 
-            if task_type == "MDTS":
-                error_level = "Parsing data for MDTS LDI dataframe"
-                ldi_dict = {"Subject": subject_num}
+                    if pTgtHit == 1: pTgtHit = 0.9999999999
+                    if not pTgtHit: pTgtHit = 0.0000000001
+                    if pFoilFA == 1: pFoilFA = 0.9999999999
+                    if not pFoilFA: pFoilFA = 0.0000000001
+                    if pLureLFA == 1: pLureLFA = 0.999999
+                    if not pLureLFA: pLureLFA = 0.000001
+                    if pLureHFA == 1: pLureHFA = 0.999999
+                    if not pLureHFA: pLureHFA = 0.000001
+                    dprime_lure_high = norm.ppf(pTgtHit) - norm.ppf(pLureHFA)
+                    ldi_dict["d'LureH"] = dprime_lure_high
+                    dprime_lure_low = norm.ppf(pTgtHit) - norm.ppf(pLureLFA)
+                    ldi_dict["d'LureL"] = dprime_lure_low
 
-                pTgtHit = row_dict["Same-%Cor"]
-                pFoilFA = row_dict["Corner Mv-%Inc"]
+                    dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
+                    ldi_dict["d'"] = dPrime
 
-                if pTgtHit == 1: pTgtHit = 0.9999999999
-                if not pTgtHit: pTgtHit = 0.0000000001
-                if pFoilFA == 1: pFoilFA = 0.9999999999
-                if not pFoilFA: pFoilFA = 0.0000000001
+                    ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
+                    ldi_dict["LDI: Low"] = row_dict["Large Mv-%Cor"] - row_dict["Same-%Inc"]
+                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                    yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
+                    ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
+                    yTarFoil = [pTgtHit, pFoilFA]
+                    ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
+                    ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
+                    ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
 
-                dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
-                ldi_dict["d'"] = dPrime
+                    dataframes["MDTS-LDI"] = dataframes["MDTS-LDI"].append(ldi_dict, ignore_index=True)
+                    dataframes["MDTS-LDI"].sort_values(by =['Subject'], inplace=True )
 
-                ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
-                ldi_dict["LDI: Low"] = row_dict["Large Mv-%Cor"] - row_dict["Same-%Inc"]
-                ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
-                yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
-                ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
-                yTarFoil = [pTgtHit, pFoilFA]
-                ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
-                ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
-                ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
+                elif task_type == "MDTO":
+                    error_level = "Parsing data for MDTO LDI dataframe,"
+                    ldi_dict = {"Subject": subject_num}
 
-                dataframes["MDTO-LDI"] = dataframes["MDTO-LDI"].append(ldi_dict, ignore_index=True)
+                    pTgtHit = row_dict["Target-%Cor"]
+                    pFoilFA = row_dict["Foil-%Inc"]
+                    pLureHFA = row_dict['LureH-%Inc']
+                    pLureLFA = row_dict['LureL-%Inc']
+                    if pTgtHit == 1: pTgtHit = 0.999999
+                    if not pTgtHit: pTgtHit = 0.000001
+                    if pFoilFA == 1: pFoilFA = 0.999999
+                    if not pFoilFA: pFoilFA = 0.000001
+                    if pLureLFA == 1: pLureLFA = 0.999999
+                    if not pLureLFA: pLureLFA = 0.000001
+                    if pLureHFA == 1: pLureHFA = 0.999999
+                    if not pLureHFA: pLureHFA = 0.000001
 
-            elif task_type == "MDTO":
-                error_level = "Parsing data for MDTO LDI dataframe"
-                ldi_dict = {"Subject": subject_num}
+                    dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
+                    ldi_dict["d'"] = dPrime
+                    dprime_lure_high = norm.ppf(pTgtHit) - norm.ppf(pLureHFA)
+                    ldi_dict["d'LureH"] = dprime_lure_high
+                    dprime_lure_low = norm.ppf(pTgtHit) - norm.ppf(pLureLFA)
+                    ldi_dict["d'LureL"] = dprime_lure_low
+                    '''
+                    5. d' for lures value d' equation
+                                {Target-%Cor ,LureH-%Inc, LureL-%inc} see clack
+                                see normsinv function equation
+                    '''
 
-                pTgtHit = row_dict["Target-%Cor"]
-                pFoilFA = row_dict["Foil-%Inc"]
+                    ldi_dict["LDI: High"] = row_dict["LureH-%Cor"] - row_dict["Target-%Inc"]
+                    ldi_dict["LDI: Low"] = row_dict["LureL-%Cor"] - row_dict["Target-%Inc"]
+                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                    yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
+                    ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
+                    yTarFoil = [pTgtHit, pFoilFA]
+                    ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
+                    ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
+                    ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
+                    #ldi_dict["dprime-high-lure"] =
+                    dataframes["MDTO-LDI"] = dataframes["MDTO-LDI"].append(ldi_dict, ignore_index=True)
+                elif task_type == "MDTT":
+                    error_level = "Parsing data for MDTT LDI dataframe"
+                    ldi_dict = {"Subject": subject_num}
 
-                if pTgtHit == 1: pTgtHit = 0.9999999999
-                if not pTgtHit: pTgtHit = 0.0000000001
-                if pFoilFA == 1: pFoilFA = 0.9999999999
-                if not pFoilFA: pFoilFA = 0.0000000001
+                    error_level = "Defining hits and false alarms"
+                    pTgtHit = row_dict["Adj-%Cor"]
+                    pFoilFA = row_dict["PR-%Inc"]
+                    pLureHFA = row_dict['Eight-%Inc']
+                    pLureLFA = row_dict['Sixteen-%Inc']
 
-                dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
-                ldi_dict["d'"] = dPrime
+                    error_level = "Setting default values"
+                    if pTgtHit == 1: pTgtHit = 0.999999
+                    if not pTgtHit: pTgtHit = 0.000001
+                    if pFoilFA == 1: pFoilFA = 0.999999
+                    if not pFoilFA: pFoilFA = 0.000001
+                    if pLureLFA == 1: pLureLFA = 0.999999
+                    if not pLureLFA: pLureLFA = 0.000001
+                    if pLureHFA == 1: pLureHFA = 0.999999
+                    if not pLureHFA: pLureHFA = 0.000001
 
-                ldi_dict["LDI: High"] = row_dict["LureH-%Cor"] - row_dict["Target-%Inc"]
-                ldi_dict["LDI: Low"] = row_dict["LureL-%Cor"] - row_dict["Target-%Inc"]
-                ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
-                yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
-                ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
-                yTarFoil = [pTgtHit, pFoilFA]
-                ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
-                ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
-                ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
+                    error_level = "Computing d'prime"
+                    dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
+                    ldi_dict["d'"] = dPrime
+                    dprime_lure_high = norm.ppf(pTgtHit) - norm.ppf(pLureHFA)
+                    ldi_dict["d'LureH"] = dprime_lure_high
+                    dprime_lure_low = norm.ppf(pTgtHit) - norm.ppf(pLureLFA)
+                    ldi_dict["d'LureL"] = dprime_lure_low
 
-                dataframes["MDTS-LDI"] = dataframes["MDTS-LDI"].append(ldi_dict, ignore_index=True)
 
+                    error_level = "Computing  LDI"
+                    ldi_dict["LDI: High"] = row_dict["Eight-%Cor"] - row_dict["Adj-%Inc"]
+                    ldi_dict["LDI: Low"] = row_dict["Sixteen-%Cor"] - row_dict["Adj-%Inc"]
+                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                    yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
+                    ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
+                    yTarFoil = [pTgtHit, pFoilFA]
+                    ldi_dict["Target-Foil_AUC"] = trapz(yTarFoil, dx=1)
+                    ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
+                    ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
+                    #ldi_dict["dprime-high-lure"] =
+                    error_level = "Writing Data Frame"
+                    dataframes["MDTT-LDI"] = dataframes["MDTT-LDI"].append(ldi_dict, ignore_index=True)
+            else:
+                error_log = error_log + 'Rejected based on lack of respose,' + str(sys.exc_info()[1]) + f" File name: {f.name}" + ',\n'
+        error_level = "Setting Output Directory,"
         output_dir = str(args.d)
-        error_level = "Writing pandas dataframes to excel sheet"
+        error_level = "Writing pandas dataframes to excel sheet,"
 
         datestamp = datetime.now()
         result_name = datestamp.strftime(f"{output_dir}BeaconAppResults_%Y_%m_%d.xlsx")
         print(f"result_name: {result_name}")
-
-        for key, value in dataframes.items():
-            value.to_excel(result_name, sheet_name=key)
-
+        with pd.ExcelWriter(result_name) as writer:
+            for key, value in dataframes.items():
+                value.sort_values(by=['Subject'], inplace=True)
+                value.to_excel(writer, sheet_name=key)
+        error_level = "Checking Excell saved,"
     except Exception as e:
-        error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + f"\n, File name: {f.name}"
-        print(error_log)
-        raise
-
+        error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + f" File name: {f.name}" + ',\n'
+        #raise
+    print(error_log)
 if __name__ == '__main__': main()
