@@ -6,8 +6,8 @@ Purpose                          Compiles dataset from
                                  and last backup of each month
 Creation Date                    08/27/2020
 Created by                       John
-Modified by                      Derek Vincent Taylor
-Last Modified                    08/27/2020
+Modified by                      Derek Vincent Taylor, Steve Flores
+Last Modified                    10/18/2024
 *****************************************************************
 In progress                     1. Add parse parameters for -s equals top folder and
                                 -d equals output folder
@@ -27,6 +27,8 @@ In progress                     1. Add parse parameters for -s equals top folder
                                 d'LureL = Z(HR of Target) -z(FA of LuresLow)
                                 6. Run script on cron job on server
                                 7. Sort subjcts by number prior to output
+last modified by Steve Flores:
+Added recognition scores to the LDI dataframes and upgraded pandas to support 2.2.3
 
 '''
 
@@ -34,11 +36,9 @@ from __future__ import division
 
 from datetime import datetime
 import argparse
-from openpyxl import Workbook
 import pandas as pd
 from pathlib import Path
 from scipy.stats import norm
-import numpy as np
 from numpy import trapz
 import sys
 
@@ -83,8 +83,8 @@ def create_pandas_dataframes() -> dict:
             dfs.append(pd.DataFrame(columns=column_names))
         else:
             dfs.append(pd.DataFrame(columns=[
-                "Subject", "d'", "LDI: High", "LDI: Combined", "Target-Foil_AUC", "LDI_slope",
-                "Target-Foil_slope"
+                "Subject","Recognition", "d'", "LDI: High", "LDI: Combined", "Target-Foil_AUC", "LDI_slope",
+                "Target-Foil_slope","d'LureH", "d'LureL", "LDI: Low", "LDI_AUC"
             ]))
 
     return dict(zip(types, dfs))
@@ -124,7 +124,8 @@ def main():
 
         for f in input_dir:
             error_level = "Checking that log file is viable,"
-            if not (f.name.endswith("log.txt") and "old" not in f.name):
+            # if we wanted to add support to tau log files, we would need to add a check here
+            if not ((f.name.endswith("log.txt") or f.name.endswith("log_tau.txt")) and "old" not in f.name):
                 continue
 
             text = f.read_text()
@@ -134,6 +135,9 @@ def main():
                 continue
 
             subject_num = int(f.name.split("_")[0])
+            # uncomment if we want to add support for tau log files
+            # if f.name.endswith("log_tau.txt"):
+                # subject_num = f'{subject_num}_tau'
             task_type = f.name.split("_")[1]
             trial_condition = 0
 
@@ -166,7 +170,10 @@ def main():
             row_dict["%s-%%Cor" % cdEasy] = get_proportion_data(lines[score_idx + 21])
             row_dict["%s-%%Inc" % cdEasy] = get_proportion_data(lines[score_idx + 22])
             if row_dict["%s-Responses" % cdHard] != 0:
-                dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
+                error_level = "Adding row to dataframe,"
+                
+                dataframes[task_type].loc[len(dataframes[task_type])] = row_dict
+                # dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
                 if task_type == "MDTS":
                     error_level = "Parsing data for MDTS LDI dataframe,"
                     ldi_dict = {"Subject": subject_num}
@@ -191,8 +198,9 @@ def main():
 
 
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
+                    # added recognition score 
+                    ldi_dict["Recognition"] = row_dict['Same-%Cor'] - row_dict['Corner Mv-%Inc']
                     ldi_dict["d'"] = dPrime
-
                     ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
                     ldi_dict["LDI: Low"] = row_dict["Large Mv-%Cor"] - row_dict["Same-%Inc"]
                     ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
@@ -203,7 +211,8 @@ def main():
                     ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
                     ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
 
-                    dataframes["MDTS-LDI"] = dataframes["MDTS-LDI"].append(ldi_dict, ignore_index=True)
+                    # dataframes["MDTS-LDI"] = dataframes["MDTS-LDI"].append(ldi_dict, ignore_index=True)
+                    dataframes["MDTS-LDI"].loc[len(dataframes["MDTS-LDI"])] = ldi_dict
                     dataframes["MDTS-LDI"].sort_values(by =['Subject'], inplace=True )
 
                 elif task_type == "MDTO":
@@ -223,6 +232,8 @@ def main():
                     if pLureHFA == 1: pLureHFA = 0.999999
                     if not pLureHFA: pLureHFA = 0.000001
 
+                    # added recognition score
+                    ldi_dict["Recognition"] = row_dict['Target-%Cor'] - row_dict['Foil-%Inc']
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
                     ldi_dict["d'"] = dPrime
                     dprime_lure_high = norm.ppf(pTgtHit) - norm.ppf(pLureHFA)
@@ -245,7 +256,8 @@ def main():
                     ldi_dict["LDI_slope"] = ldi_dict["LDI: Low"] - ldi_dict["LDI: High"]
                     ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
                     #ldi_dict["dprime-high-lure"] =
-                    dataframes["MDTO-LDI"] = dataframes["MDTO-LDI"].append(ldi_dict, ignore_index=True)
+                    dataframes["MDTO-LDI"].loc[len(dataframes["MDTO-LDI"])] = ldi_dict
+                    # dataframes["MDTO-LDI"] = dataframes["MDTO-LDI"].append(ldi_dict, ignore_index=True)
                 elif task_type == "MDTT":
                     error_level = "Parsing data for MDTT LDI dataframe"
                     ldi_dict = {"Subject": subject_num}
@@ -266,6 +278,7 @@ def main():
                     if pLureHFA == 1: pLureHFA = 0.999999
                     if not pLureHFA: pLureHFA = 0.000001
 
+                    ldi_dict["Recognition"] = row_dict['Adj-%Cor'] - row_dict['PR-%Inc']
                     error_level = "Computing d'prime"
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
                     ldi_dict["d'"] = dPrime
@@ -287,7 +300,8 @@ def main():
                     ldi_dict["Target-Foil_slope"] = pTgtHit - pFoilFA
                     #ldi_dict["dprime-high-lure"] =
                     error_level = "Writing Data Frame"
-                    dataframes["MDTT-LDI"] = dataframes["MDTT-LDI"].append(ldi_dict, ignore_index=True)
+                    dataframes["MDTT-LDI"].loc[len(dataframes["MDTT-LDI"])] = ldi_dict
+                    # dataframes["MDTT-LDI"] = dataframes["MDTT-LDI"].append(ldi_dict, ignore_index=True)
             else:
                 error_log = error_log + 'Rejected based on lack of respose,' + str(sys.exc_info()[1]) + f" File name: {f.name}" + ',\n'
         error_level = "Setting Output Directory,"
@@ -305,5 +319,5 @@ def main():
     except Exception as e:
         #error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + f" File name: {f.name}" + ',\n'
         error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + '\n'
-    print(error_log)
+        print(error_log)
 if __name__ == '__main__': main()
