@@ -6,8 +6,8 @@ Purpose                          Compiles dataset from
                                  and last backup of each month
 Creation Date                    08/27/2020
 Created by                       John
-Modified by                      Derek Vincent Taylor, Steve Flores
-Last Modified                    10/18/2024
+Modified by                      Derek Vincent Taylor, Steve Flores, Jason R. Bock
+Last Modified                    06/16/2025
 *****************************************************************
 In progress                     1. Add parse parameters for -s equals top folder and
                                 -d equals output folder
@@ -27,9 +27,8 @@ In progress                     1. Add parse parameters for -s equals top folder
                                 d'LureL = Z(HR of Target) -z(FA of LuresLow)
                                 6. Run script on cron job on server
                                 7. Sort subjcts by number prior to output
-last modified by Steve Flores:
-Added recognition scores to the LDI dataframes and upgraded pandas to support 2.2.3
-
+last modified by Jason R. Bock:
+Changed lines 207, 252, and 295 to use weighted mean rather than simple mean for LDI: Combined calculation, to account for unequal non-response to low- and high-lure items.
 '''
 
 from __future__ import division
@@ -169,6 +168,7 @@ def main():
             row_dict["%s-Responses" % cdEasy] = get_data_after_colon(lines[score_idx + 13])
             row_dict["%s-%%Cor" % cdEasy] = get_proportion_data(lines[score_idx + 21])
             row_dict["%s-%%Inc" % cdEasy] = get_proportion_data(lines[score_idx + 22])
+
             if row_dict["%s-Responses" % cdHard] != 0:
                 error_level = "Adding row to dataframe,"
                 
@@ -203,7 +203,7 @@ def main():
                     ldi_dict["d'"] = dPrime
                     ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
                     ldi_dict["LDI: Low"] = row_dict["Large Mv-%Cor"] - row_dict["Same-%Inc"]
-                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                    ldi_dict["LDI: Combined"] = ((ldi_dict["LDI: High"] * row_dict["Small Mv-Responses"]) + (ldi_dict["LDI: Low"] * row_dict["Large Mv-Responses"])) / (row_dict["Small Mv-Responses"] + row_dict["Large Mv-Responses"])
                     yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
                     ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
@@ -248,7 +248,7 @@ def main():
 
                     ldi_dict["LDI: High"] = row_dict["LureH-%Cor"] - row_dict["Target-%Inc"]
                     ldi_dict["LDI: Low"] = row_dict["LureL-%Cor"] - row_dict["Target-%Inc"]
-                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                    ldi_dict["LDI: Combined"] = ((ldi_dict["LDI: High"] * row_dict["LureH-Responses"]) + (ldi_dict["LDI: Low"] * row_dict["LureL-Responses"])) / (row_dict["LureH-Responses"] + row_dict["LureL-Responses"])
                     yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
                     ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
@@ -287,11 +287,10 @@ def main():
                     dprime_lure_low = norm.ppf(pTgtHit) - norm.ppf(pLureLFA)
                     ldi_dict["d'LureL"] = dprime_lure_low
 
-
                     error_level = "Computing  LDI"
                     ldi_dict["LDI: High"] = row_dict["Eight-%Cor"] - row_dict["Adj-%Inc"]
                     ldi_dict["LDI: Low"] = row_dict["Sixteen-%Cor"] - row_dict["Adj-%Inc"]
-                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
+                    ldi_dict["LDI: Combined"] = ((ldi_dict["LDI: High"] * row_dict["Eight-Responses"]) + (ldi_dict["LDI: Low"] * row_dict["Sixteen-Responses"])) / (row_dict["Eight-Responses"] + row_dict["Sixteen-Responses"])
                     yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
                     ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
