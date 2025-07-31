@@ -11,6 +11,11 @@ Last Modified                    07/16/2025
 last modified by                 Derek Vincent Taylor:
 *****************************************************************
 
+    parameters: -s, string, Top folder from which to read results")
+                -a', string, "RedCap token"
+                '-r', integer, report number
+                '-e', integer, ID report number"
+
 
 Changed lines 207, 252, and 295 to use weighted mean rather than simple mean for LDI: Combined calculation, to account for unequal non-response to low- and high-lure items.
 '''
@@ -139,24 +144,36 @@ redcap_headers =  {
     "MDTO" : 'record_id,redcap_event_name,mdto_trials_cond,mdto_target_responses,mdto_target_pct_cor,'
              'mdto_target_pct_inc,mdto_lureh_responses,mdto_lureh_pct_cor,mdto_lureh_pct_inc,mdto_lurel_responses,'
              'mdto_lurel_pct_cor,mdto_lurel_pct_inc,mdto_foil_responses,mdto_foil_pct_cor,mdto_foil_pct_inc,'
-             'mdto_foil_pct_inc',
+             'mdto_foil_pct_inc,mdto_complete',
     "MDTS" : 'record_id,redcap_event_name,mdts_trials_cond,mdts_same_responses,mdts_same_pct_cor,mdts_same_pct_inc,'
              'mdts_small_mv_responses,mdts_small_mv_pct_cor,mdts_small_mv_pct_inc,mdts_large_mv_responses,'
              'mdts_large_mv_pct_cor,mdts_large_mv_pct_inc,mdts_corner_mv_responses,mdts_corner_mv_pct_cor,'
-             'mdts_corner_mv_pct_inc',
+             'mdts_corner_mv_pct_inc,mdts_complete',
     "MDTT" : 'record_id,redcap_event_name,mdtt_trials_cond,mdtt_adj_responses,mdtt_adj_pcnt_cor,mdtt_adj_pct_inc,'
              'mdtt_eight_responses,mdtt_eight_pct_cor,mdtt_eight_inc,mdtt_sixteen_responses,mdtt_sixteen_pct_cor,'
-             'mdtt_sixteen_pct_inc,mdtt_pr_responses,mdtt_pr_pct_cor,mdtt_pr_pct_inc',
+             'mdtt_sixteen_pct_inc,mdtt_pr_responses,mdtt_pr_pct_cor,mdtt_pr_pct_inc,mdtt_complete',
     "MDTO-LDI" : 'record_id,redcap_event_name,mdto_recognition,mdto_ldi_d_prime,mdto_ldi_high,mdto_ldi_combined,mdto_ldi_target_foil_auc,'
                  'mdto_ldi_slope,mdto_ldi_target_foil_slope,mdto_ldi_low,mdto_ldi_auc,mdto_d_prime_lure_h,'
-                 'mdto_d_prime_lure_l',
+                 'mdto_d_prime_lure_l,mdtoldi_complete',
     "MDTS-LDI" : 'record_id,redcap_event_name,mdts_recognition,mdts_d_prime,mdts_ldi_high,mdts_ldi_combined,'
-                 'mdts_target_foil_auc,mdts_ldi_slope,'
-                 'mdts_target_foil_slope,mdts_ldi_low,mdts_ldi_auc,mdts_d_prime_lure_h,mdts_d_prime_lure_l',
+                 'mdts_target_foil_auc,mdts_ldi_slope,mdts_target_foil_slope,mdts_ldi_low,mdts_ldi_auc,'
+                 'mdts_d_prime_lure_h,mdts_d_prime_lure_l,mdtsldi_complete',
     "MDTT-LDI" : 'record_id,redcap_event_name,mdtt_recognition,mdtt_ldi_d_prime,mdtt_ldi_high,mdtt_ldi_combined,'
                  'mdtt_target_foil_auc,mdtt_ldi_slope,mdtt_target_foil_slope,mdtt_ldi_low,mdtt_ldi_auc,'
-                 'mdtt_d_prime_lure_h,mdtt_d_prime_lure_l'
+                 'mdtt_d_prime_lure_h,mdtt_d_prime_lure_l,mdttldi_complete'
 }
+
+#
+
+completion_variables = {
+    "MDTO" : 'mdto_complete',
+    "MDTS" : "mdts_complete",
+    "MDTT" : 'mdtt_complete',
+    "MDTO-LDI" : 'mdtoldi_complete',
+    "MDTS-LDI" : 'mdtsldi_complete',
+    "MDTT-LDI" : 'mdttldi_complete'
+}
+
 
 def create_pandas_dataframes() -> dict:
     types = ["MDTO", "MDTS", "MDTT", "MDTO-LDI", "MDTS-LDI", "MDTT-LDI"]
@@ -223,6 +240,7 @@ def main():
                    'returnFormat': 'json'}
         response = post(URL, data=payload)
         id_list = pd.read_json(response.text)
+        error_level = "Cleaning up ID list, remove blank rows"
 
         # Create pandas dataframe for each task type
         error_level = "Creating pandas dataframes,"
@@ -423,6 +441,8 @@ def main():
             df_data = value.rename(columns=redcap_names[key])
             error_level = "Processing MDT data,create sub_id field"
             df_data.loc[:,'sub_id'] = df_data['Subject']
+            error_level = "Processing MDT Data, Mark complete by key"
+            df_data.loc[:,completion_variables[key]] = 2
             error_level = "Processing MDT data,inner merge to ID list"
             df_merged = pd.merge(df_data, id_list, on = ['sub_id'])
             error_level = "Processing MDT data,set redcap_event_name"
