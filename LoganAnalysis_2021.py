@@ -7,7 +7,7 @@ Purpose                          Compiles dataset from
 Creation Date                    08/27/2020
 Created by                       John
 Modified by                      Derek Vincent Taylor, Steve Flores, Jason R. Bock
-Last Modified                    06/16/2025
+Last Modified                    04/15/2026
 *****************************************************************
 In progress                     1. Add parse parameters for -s equals top folder and
                                 -d equals output folder
@@ -28,7 +28,12 @@ In progress                     1. Add parse parameters for -s equals top folder
                                 6. Run script on cron job on server
                                 7. Sort subjcts by number prior to output
 last modified by Jason R. Bock:
-Changed lines 207, 252, and 295 to use weighted mean rather than simple mean for LDI: Combined calculation, to account for unequal non-response to low- and high-lure items.
+Added column names for output file for Session (lines 80 and 90) and Accuracy (line 90).
+Added parse of session ID from log file name after first underscore and before second (line 142) and updated parse of domain (line 146) for after second underscore.
+Added Session to row dict (line 161).
+Added Session to LDI dict (lines 185, 226, 271).
+Added (lines 207, 242, 290) Accuracy calculation (weighted mean of %Correct across all image types; NOTE that this is somewhat less precise than if we parsed raw counts to compute overall proportion, because %Correct is rounded to 2 places in a previous step, but this method of using %Correct is preserved for workflows that rely on recording these values)
+Added Session to the sorting rules for the output dataframes (line 326)
 '''
 
 from __future__ import division
@@ -72,7 +77,7 @@ def create_pandas_dataframes() -> dict:
             cdHard, cdHigh, cdLow, cdEasy = mapping[type].values()
 
             column_names = (
-                "Subject", "Trials/Cond", "%s-Responses" % (cdHard), "%s-%%Cor" % (cdHard),
+                "Subject", "Session", "Trials/Cond", "%s-Responses" % (cdHard), "%s-%%Cor" % (cdHard),
                 "%s-%%Inc" % (cdHard), "%s-Responses" % (cdHigh), "%s-%%Cor" % (cdHigh), "%s-%%Inc" % (cdHigh),
                 "%s-Responses" % (cdLow),
                 "%s-%%Cor" % (cdLow), "%s-%%Inc" % (cdLow), "%s-Responses" % (cdEasy), "%s-%%Cor" % (cdEasy),
@@ -82,7 +87,7 @@ def create_pandas_dataframes() -> dict:
             dfs.append(pd.DataFrame(columns=column_names))
         else:
             dfs.append(pd.DataFrame(columns=[
-                "Subject","Recognition", "d'", "LDI: High", "LDI: Combined", "Target-Foil_AUC", "LDI_slope",
+                "Subject", "Session", "Accuracy", "Recognition", "d'", "LDI: High", "LDI: Combined", "Target-Foil_AUC", "LDI_slope",
                 "Target-Foil_slope","d'LureH", "d'LureL", "LDI: Low", "LDI_AUC"
             ]))
 
@@ -134,10 +139,11 @@ def main():
                 continue
 
             subject_num = int(f.name.split("_")[0])
+            session_num = int(f.name.split("_")[1])
             # uncomment if we want to add support for tau log files
             # if f.name.endswith("log_tau.txt"):
                 # subject_num = f'{subject_num}_tau'
-            task_type = f.name.split("_")[1]
+            task_type = f.name.split("_")[2]
             trial_condition = 0
 
             error_level = f"Parsing data from log file of task type {task_type},"
@@ -152,7 +158,7 @@ def main():
                     break
                 idx += 1
 
-            row_dict = {"Subject": subject_num, "Trials/Cond": trial_condition}
+            row_dict = {"Subject": subject_num, "Session": session_num, "Trials/Cond": trial_condition}
             score_idx = lines.index("Scores:")
             cdHard, cdHigh, cdLow, cdEasy = mapping[task_type].values()
 
@@ -176,7 +182,7 @@ def main():
                 # dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
                 if task_type == "MDTS":
                     error_level = "Parsing data for MDTS LDI dataframe,"
-                    ldi_dict = {"Subject": subject_num}
+                    ldi_dict = {"Subject": subject_num, "Session": session_num}
 
                     pTgtHit = row_dict["Same-%Cor"]
                     pFoilFA = row_dict["Corner Mv-%Inc"]
@@ -196,9 +202,9 @@ def main():
                     dprime_lure_low = norm.ppf(pTgtHit) - norm.ppf(pLureLFA)
                     ldi_dict["d'LureL"] = dprime_lure_low
 
-
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
-                    # added recognition score 
+                    # Added Accuracy
+                    ldi_dict["Accuracy"] = sum([row_dict['Same-%Cor']*row_dict['Same-Responses'], row_dict['Small Mv-%Cor']*row_dict['Small Mv-Responses'], row_dict['Large Mv-%Cor']*row_dict['Large Mv-Responses'], row_dict['Corner Mv-%Cor']*row_dict['Corner Mv-Responses']]) / sum([row_dict['Same-Responses'], row_dict['Small Mv-Responses'], row_dict['Large Mv-Responses'], row_dict['Corner Mv-Responses']])
                     ldi_dict["Recognition"] = row_dict['Same-%Cor'] - row_dict['Corner Mv-%Inc']
                     ldi_dict["d'"] = dPrime
                     ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
@@ -213,11 +219,11 @@ def main():
 
                     # dataframes["MDTS-LDI"] = dataframes["MDTS-LDI"].append(ldi_dict, ignore_index=True)
                     dataframes["MDTS-LDI"].loc[len(dataframes["MDTS-LDI"])] = ldi_dict
-                    dataframes["MDTS-LDI"].sort_values(by =['Subject'], inplace=True )
+                    # dataframes["MDTS-LDI"].sort_values(by =['Subject'], inplace=True )
 
                 elif task_type == "MDTO":
                     error_level = "Parsing data for MDTO LDI dataframe,"
-                    ldi_dict = {"Subject": subject_num}
+                    ldi_dict = {"Subject": subject_num, "Session": session_num}
 
                     pTgtHit = row_dict["Target-%Cor"]
                     pFoilFA = row_dict["Foil-%Inc"]
@@ -232,7 +238,8 @@ def main():
                     if pLureHFA == 1: pLureHFA = 0.999999
                     if not pLureHFA: pLureHFA = 0.000001
 
-                    # added recognition score
+                    # Added Accuracy
+                    ldi_dict["Accuracy"] = sum([row_dict['Target-%Cor']*row_dict['Target-Responses'], row_dict['LureH-%Cor']*row_dict['LureH-Responses'], row_dict['LureL-%Cor']*row_dict['LureL-Responses'], row_dict['Foil-%Cor']*row_dict['Foil-Responses']]) / sum([row_dict['Target-Responses'], row_dict['LureH-Responses'], row_dict['LureL-Responses'], row_dict['Foil-Responses']])
                     ldi_dict["Recognition"] = row_dict['Target-%Cor'] - row_dict['Foil-%Inc']
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
                     ldi_dict["d'"] = dPrime
@@ -258,9 +265,10 @@ def main():
                     #ldi_dict["dprime-high-lure"] =
                     dataframes["MDTO-LDI"].loc[len(dataframes["MDTO-LDI"])] = ldi_dict
                     # dataframes["MDTO-LDI"] = dataframes["MDTO-LDI"].append(ldi_dict, ignore_index=True)
+
                 elif task_type == "MDTT":
                     error_level = "Parsing data for MDTT LDI dataframe"
-                    ldi_dict = {"Subject": subject_num}
+                    ldi_dict = {"Subject": subject_num, "Session": session_num}
 
                     error_level = "Defining hits and false alarms"
                     pTgtHit = row_dict["Adj-%Cor"]
@@ -278,6 +286,8 @@ def main():
                     if pLureHFA == 1: pLureHFA = 0.999999
                     if not pLureHFA: pLureHFA = 0.000001
 
+                    # Added Accuracy
+                    ldi_dict["Accuracy"] = sum([row_dict['Adj-%Cor']*row_dict['Adj-Responses'], row_dict['Eight-%Cor']*row_dict['Eight-Responses'], row_dict['Sixteen-%Cor']*row_dict['Sixteen-Responses'], row_dict['PR-%Cor']*row_dict['PR-Responses']]) / sum([row_dict['Adj-Responses'], row_dict['Eight-Responses'], row_dict['Sixteen-Responses'], row_dict['PR-Responses']])
                     ldi_dict["Recognition"] = row_dict['Adj-%Cor'] - row_dict['PR-%Inc']
                     error_level = "Computing d'prime"
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
@@ -303,6 +313,7 @@ def main():
                     # dataframes["MDTT-LDI"] = dataframes["MDTT-LDI"].append(ldi_dict, ignore_index=True)
             else:
                 error_log = error_log + 'Rejected based on lack of respose,' + str(sys.exc_info()[1]) + f" File name: {f.name}" + ',\n'
+
         error_level = "Setting Output Directory,"
         output_dir = str(args.d)
         error_level = "Writing pandas dataframes to excel sheet,"
@@ -312,7 +323,7 @@ def main():
         print(f"result_name: {result_name}")
         with pd.ExcelWriter(result_name) as writer:
             for key, value in dataframes.items():
-                value.sort_values(by=['Subject'], inplace=True)
+                value.sort_values(by=['Subject', 'Session'], inplace=True)
                 value.to_excel(writer, sheet_name=key)
         error_level = "Checking Excell saved,"
     except Exception as e:
