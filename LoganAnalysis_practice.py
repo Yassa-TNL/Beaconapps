@@ -6,8 +6,8 @@ Purpose                          Complies dataset from
                                  and last backup of each month
 Creation Date                    08/27/2020
 Created by                       John
-Modified by                      Derek Vincent Taylor
-Last Modified                    08/27/2020
+Modified by                      Derek Vincent Taylor, Jason R. Bock
+Last Modified                    06/23/2025
 *****************************************************************
 In progress                     1. Add recognition score hitrate - false alarm
                                 Target-%Cor - Foil-%Inc
@@ -184,7 +184,7 @@ def main():
 
                     hiLDI = ws['G%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
                     loLDI = ws['J%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
-                    cbLDI = (hiLDI + loLDI) / 2
+                    cbLDI = ((hiLDI * ws['F%d' % (row + 1)].value) + (loLDI * ws['I%d' % (row + 1)].value)) / (ws['F%d' % (row + 1)].value + ws['I%d' % (row + 1)].value)
                     yLDI = [loLDI, hiLDI]
                     areaLDI = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
@@ -214,7 +214,7 @@ def main():
 
                     hiLDI = ws['G%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
                     loLDI = ws['J%d' % (row + 1)].value - ws['E%d' % (row + 1)].value
-                    cbLDI = (hiLDI + loLDI) / 2
+                    cbLDI = ((hiLDI * ws['F%d' % (row + 1)].value) + (loLDI * ws['I%d' % (row + 1)].value)) / (ws['F%d' % (row + 1)].value + ws['I%d' % (row + 1)].value)
                     yLDI = [loLDI, hiLDI]
                     areaLDI = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
