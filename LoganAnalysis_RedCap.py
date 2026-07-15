@@ -29,7 +29,6 @@ from pathlib import Path
 from scipy.stats import norm
 from numpy import trapz
 import sys
-import requests
 from requests import post
 
 mapping = {
@@ -298,10 +297,9 @@ def main():
             row_dict["%s-Responses" % cdEasy] = get_data_after_colon(lines[score_idx + 13])
             row_dict["%s-%%Cor" % cdEasy] = get_proportion_data(lines[score_idx + 21])
             row_dict["%s-%%Inc" % cdEasy] = get_proportion_data(lines[score_idx + 22])
-
             if row_dict["%s-Responses" % cdHard] != 0:
                 error_level = "Adding row to dataframe,"
-
+                
                 dataframes[task_type].loc[len(dataframes[task_type])] = row_dict
                 # dataframes[task_type] = dataframes[task_type].append(row_dict, ignore_index = True)
                 if task_type == "MDTS":
@@ -328,7 +326,7 @@ def main():
 
 
                     dPrime = norm.ppf(pTgtHit) - norm.ppf(pFoilFA)
-                    # added recognition score
+                    # added recognition score 
                     ldi_dict["Recognition"] = row_dict['Same-%Cor'] - row_dict['Corner Mv-%Inc']
                     ldi_dict["d'"] = dPrime
                     ldi_dict["LDI: High"] = row_dict["Small Mv-%Cor"] - row_dict["Same-%Inc"]
@@ -378,7 +376,7 @@ def main():
 
                     ldi_dict["LDI: High"] = row_dict["LureH-%Cor"] - row_dict["Target-%Inc"]
                     ldi_dict["LDI: Low"] = row_dict["LureL-%Cor"] - row_dict["Target-%Inc"]
-                    ldi_dict["LDI: Combined"] = ((ldi_dict["LDI: High"] * row_dict["LureH-Responses"]) + (ldi_dict["LDI: Low"] * row_dict["LureL-Responses"])) / (row_dict["LureH-Responses"] + row_dict["LureL-Responses"])
+                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
                     yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
                     ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
@@ -417,10 +415,11 @@ def main():
                     dprime_lure_low = norm.ppf(pTgtHit) - norm.ppf(pLureLFA)
                     ldi_dict["d'LureL"] = dprime_lure_low
 
+
                     error_level = "Computing  LDI"
                     ldi_dict["LDI: High"] = row_dict["Eight-%Cor"] - row_dict["Adj-%Inc"]
                     ldi_dict["LDI: Low"] = row_dict["Sixteen-%Cor"] - row_dict["Adj-%Inc"]
-                    ldi_dict["LDI: Combined"] = ((ldi_dict["LDI: High"] * row_dict["Eight-Responses"]) + (ldi_dict["LDI: Low"] * row_dict["Sixteen-Responses"])) / (row_dict["Eight-Responses"] + row_dict["Sixteen-Responses"])
+                    ldi_dict["LDI: Combined"] = (ldi_dict["LDI: High"] + ldi_dict["LDI: Low"])/2
                     yLDI = [ldi_dict["LDI: Low"], ldi_dict["LDI: High"]]
                     ldi_dict["LDI_AUC"] = trapz(yLDI, dx=1)
                     yTarFoil = [pTgtHit, pFoilFA]
