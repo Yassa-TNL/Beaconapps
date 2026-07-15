@@ -21,13 +21,9 @@ Changelog
 '''
 
 from __future__ import division
-
-from datetime import datetime
-import argparse
 import pandas as pd
 from pathlib import Path
 from scipy.stats import norm
-import numpy as np
 from numpy import trapezoid
 import sys
 
@@ -56,7 +52,7 @@ mapping = {
 def create_pandas_dataframe() -> dict:
     task_types_lc = ["mdto", "mdts", "mdtt"]
 
-    df = pd.DataFrame(columns=["id_participant", "id_sessin", "visit_date"])
+    df = pd.DataFrame(columns=["id_participant", "id_session", "visit_date"])
 
     dict_keys = {}
 
@@ -101,26 +97,17 @@ def get_data_after_colon(line: str) -> int:
     return int(line[colon_idx+1:].strip())
 
 
-def main():
+def Generate_Report(parent_folder)-> pd.DataFrame:
     error_log = "Data Parsed, Error Occured During, notes" + "\n"
     # to see what each block of code is doing examine error_level statement
     error_level = ""
     try:
-        error_level = 'Get Parameters, Declare Arg Parser,'
-        parser = argparse.ArgumentParser()
-        error_level = "Get Parameters, Add arguments to parser"
-        parser.add_argument('-s', required=True, help="Top folder from which to read results")
-        parser.add_argument('-d', required=True, help="Output folder for Results")
-        error_level = "Get Parameters, Run Args Parser,"
-        args = parser.parse_args()
-        error_level = "Get Parameters, Declare Arg Parser,"
-
         # Create pandas dataframe for each task type
         error_level = "Creating pandas dataframe,"
         df, dict_keys = create_pandas_dataframe()
 
         error_level = "Extracting data from all relevant log files,"
-        input_dir = Path(args.s).iterdir()
+        input_dir = Path(parent_folder).iterdir()
 
         for f in input_dir:
 
@@ -275,18 +262,9 @@ def main():
         error_level = "Setting Output Directory,"
 
         df.sort_values(["id_participant", "id_session"])
-        output_dir = str(args.d)
-        error_level = "Writing pandas dataframes to excel sheet,"
+        return df
 
-        datestamp = datetime.now()
-        result_name = datestamp.strftime(f"{output_dir}BeaconAppResults_%Y_%m_%d.xlsx")
-        print(f"result_name: {result_name}")
-        with pd.ExcelWriter(result_name) as writer:
-            df.to_excel(writer)
-
-        error_level = "Checking Excell saved,"
     except Exception as e:
         #error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + f" File name: {f.name}" + ',\n'
         error_log = error_log + error_level + ',' + str(sys.exc_info()[1]) + '\n'
         print(error_log)
-if __name__ == '__main__': main()
